@@ -1,0 +1,74 @@
+server:
+  name: TradingViewMCP
+  version: "1.0.0"
+  description: "Production quant trading engine via MCP"
+
+data:
+  default_period: "2y"
+  default_interval: "1d"
+  cache_ttl_seconds: 300
+  risk_free_rate_fallback: 0.045
+
+swarm:
+  n_ants: 5
+  agent_timeout_seconds: 30
+  default_tickers:
+    - "RELIANCE.NS"
+    - "TCS.NS"
+    - "INFY.NS"
+    - "HDFCBANK.NS"
+    - "ICICIBANK.NS"
+
+pipelines:
+  max_concurrent: 4
+  result_ttl_seconds: 600
+
+models:
+  transformer_mc:
+    n_paths: 2000
+    n_steps: 60
+    context_window: 60
+    d_model: 64
+    n_heads: 4
+    n_layers: 3
+    n_epochs: 100
+  tft:
+    horizons: [1, 5, 10, 20]
+    quantiles: [0.10, 0.50, 0.90]
+  garch:
+    forecast_horizon: 30
+    confidence: 0.95
+  rough_vol:
+    H: 0.1
+    eta: 1.9
+    rho: -0.7
+    n_paths: 1000
+    n_steps: 100
+
+strategy:
+  min_confidence: 0.40
+  min_signal_strength: 0.35
+  fusion_weights:
+    volatility: 0.20
+    options_flow: 0.20
+    transformer: 0.25
+    swarm: 0.20
+    sentiment: 0.15
+
+risk:
+  max_var_pct: 0.05
+  max_position_pct: 0.10
+  min_rr_ratio: 1.5
+  atr_stop_mult: 2.0
+  atr_tp_mult: 3.0
+  max_drawdown_pct: 0.20
+
+pine:
+  default_rsi_len: 14
+  default_ema_fast: 20
+  default_ema_slow: 50
+  default_atr_len: 14
+  default_atr_mult: 2.0
+  default_vol_threshold: 1.5
+  long_score_threshold: 4
+  short_score_threshold: 4
