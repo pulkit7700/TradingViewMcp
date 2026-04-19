@@ -91,15 +91,29 @@ async def _vol_step_garch(ctx: PipelineContext) -> PipelineContext:
         results = forecaster.fit_all()
         best = forecaster.select_best(results)
         forecaster.forecast(best, horizon=horizon, confidence=confidence)
-        signal = forecaster.compare_to_iv()
+        # Annualize conditional vol for compare_to_iv
+        cond_vol_daily = _scalar(best.conditional_vol[-1]) if best.conditional_vol is not None else None
+        garch_ann_vol = cond_vol_daily * float(np.sqrt(252)) if cond_vol_daily else None
+        # Use 20-day realized vol as current_iv proxy (no options chain needed)
+        hv20 = float(np.std(returns[-20:]) * np.sqrt(252)) if len(returns) >= 20 else None
+        signal = (
+            forecaster.compare_to_iv(garch_ann_vol, hv20)
+            if garch_ann_vol and hv20
+            else {"signal": "FAIR", "strength": "WEAK", "premium_pct": 0.0}
+        )
+        fv = best.forecast_vol if best.forecast_vol is not None else []
+        fu = best.forecast_upper if best.forecast_upper is not None else []
+        fl = best.forecast_lower if best.forecast_lower is not None else []
         return {
             "model_type": best.model_type,
             "aic": _scalar(best.aic),
-            "forecast_vol": [_scalar(v) for v in (best.forecast_vol or [])],
-            "forecast_upper": [_scalar(v) for v in (best.forecast_upper or [])],
-            "forecast_lower": [_scalar(v) for v in (best.forecast_lower or [])],
+            "forecast_vol": [_scalar(v) for v in fv],
+            "forecast_upper": [_scalar(v) for v in fu],
+            "forecast_lower": [_scalar(v) for v in fl],
             "iv_signal": signal,
-            "current_conditional_vol": _scalar(best.conditional_vol[-1]) if best.conditional_vol is not None else None,
+            "current_conditional_vol": cond_vol_daily,
+            "garch_annualized_vol": garch_ann_vol,
+            "hv20": hv20,
         }
 
     garch_out = await _async(_fit)
@@ -702,9 +716,15 @@ async def _fusion_step_vol_regime(ctx: PipelineContext) -> PipelineContext:
         results = f.fit_all()
         best = f.select_best(results)
         f.forecast(best, horizon=10)
-        sig = f.compare_to_iv()
         vol_now = _scalar(best.conditional_vol[-1]) if best.conditional_vol is not None else None
-        vol_fwd = _scalar(best.forecast_vol[0]) if best.forecast_vol else None
+        vol_fwd = _scalar(best.forecast_vol[0]) if best.forecast_vol is not None and len(best.forecast_vol) > 0 else None
+        garch_ann = vol_now * float(np.sqrt(252)) if vol_now else None
+        hv20 = float(np.std(returns[-20:]) * np.sqrt(252)) if len(returns) >= 20 else None
+        sig = (
+            f.compare_to_iv(garch_ann, hv20)
+            if garch_ann and hv20
+            else {"signal": "FAIR", "strength": "WEAK", "premium_pct": 0.0}
+        )
         return {"iv_signal": sig, "current_vol": vol_now, "forecast_vol": vol_fwd}
 
     def _regime():
