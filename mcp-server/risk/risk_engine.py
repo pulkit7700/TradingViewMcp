@@ -13,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 import numpy as np
+import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
@@ -98,7 +99,9 @@ class RiskEngine:
                 stress_worst_case=0.0,
             )
 
-        analytics = RiskAnalytics(returns, price)
+        # Convert numpy array to pandas Series for RiskAnalytics (expects Series)
+        returns_series = pd.Series(returns) if isinstance(returns, np.ndarray) else returns
+        analytics = RiskAnalytics(returns_series, price)
 
         # VaR / CVaR
         try:

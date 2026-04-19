@@ -11,6 +11,7 @@ import os
 import asyncio
 import logging
 import numpy as np
+import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -164,14 +165,28 @@ async def _vol_step_regime(ctx: PipelineContext) -> PipelineContext:
     returns = ctx.get("returns")
 
     def _detect():
-        detector = RegimeDetector(returns, n_regimes=3, seed=42)
+        # Convert numpy array to pandas Series for RegimeDetector (expects .dropna() method)
+        returns_series = pd.Series(returns) if isinstance(returns, np.ndarray) else returns
+        detector = RegimeDetector(returns_series, n_regimes=3, seed=42)
         res = detector.fit()
+        # regime_stats is a list[RegimeStats], convert to dict keyed by regime_id
+        regime_stats_dict = {}
+        for stat in res.regime_stats:
+            regime_stats_dict[stat.regime_id] = {
+                "label": stat.label,
+                "mean_daily_return": _scalar(stat.mean_daily_return),
+                "std_daily_return": _scalar(stat.std_daily_return),
+                "annualized_return": _scalar(stat.annualized_return),
+                "annualized_vol": _scalar(stat.annualized_vol),
+                "sharpe_ratio": _scalar(stat.sharpe_ratio),
+                "avg_duration_days": _scalar(stat.avg_duration_days),
+                "pct_time_in_regime": _scalar(stat.pct_time_in_regime),
+            }
         return {
             "current_regime": res.current_regime,
-            "regime_stats": {k: {kk: _scalar(vv) for kk, vv in v.items()}
-                              for k, v in res.regime_stats.items()},
-            "aic": _scalar(res.AIC),
-            "bic": _scalar(res.BIC),
+            "regime_stats": regime_stats_dict,
+            "aic": _scalar(res.aic),
+            "bic": _scalar(res.bic),
         }
 
     regime_out = await _async(_detect)
@@ -218,16 +233,19 @@ async def _vol_step_signal(ctx: PipelineContext) -> PipelineContext:
     ml_iv = ctx.get("ml_iv", {})
     rough = ctx.get("rough_vol", {})
 
-    current_regime = regime.get("current_regime", "Neutral")
+    regime_id = regime.get("current_regime", 0)
+    regime_stats = regime.get("regime_stats", {})
+    regime_label = regime_stats.get(regime_id, {}).get("label", "Neutral") if isinstance(regime_stats, dict) else "Neutral"
+
     iv_signal = garch.get("iv_signal", {}).get("signal", "FAIR")
     ml_signal = ml_iv.get("signal", "FAIR")
     H = rough.get("H", 0.5)
 
     # Direction score: +1 = bullish (vol selling), -1 = bearish (vol buying)
     score = 0.0
-    if "Bull" in current_regime:
+    if "Bull" in regime_label:
         score += 1.0
-    elif "Bear" in current_regime:
+    elif "Bear" in regime_label:
         score -= 1.0
 
     # High vol → mean reversion expected → slight bullish
@@ -254,7 +272,7 @@ async def _vol_step_signal(ctx: PipelineContext) -> PipelineContext:
         "confidence": round(confidence, 3),
         "score": round(score, 3),
         "contributing_factors": {
-            "regime": current_regime,
+            "regime": regime_label,
             "iv_signal": iv_signal,
             "ml_signal": ml_signal,
             "hurst_H": round(H, 4),
@@ -728,9 +746,23 @@ async def _fusion_step_vol_regime(ctx: PipelineContext) -> PipelineContext:
         return {"iv_signal": sig, "current_vol": vol_now, "forecast_vol": vol_fwd}
 
     def _regime():
-        d = RegimeDetector(returns, n_regimes=3, seed=42)
+        returns_series = pd.Series(returns) if isinstance(returns, np.ndarray) else returns
+        d = RegimeDetector(returns_series, n_regimes=3, seed=42)
         r = d.fit()
-        return {"current_regime": r.current_regime, "regime_stats": r.regime_stats}
+        # regime_stats is a list[RegimeStats], convert to dict keyed by regime_id
+        regime_stats_dict = {}
+        for stat in r.regime_stats:
+            regime_stats_dict[stat.regime_id] = {
+                "label": stat.label,
+                "mean_daily_return": _scalar(stat.mean_daily_return),
+                "std_daily_return": _scalar(stat.std_daily_return),
+                "annualized_return": _scalar(stat.annualized_return),
+                "annualized_vol": _scalar(stat.annualized_vol),
+                "sharpe_ratio": _scalar(stat.sharpe_ratio),
+                "avg_duration_days": _scalar(stat.avg_duration_days),
+                "pct_time_in_regime": _scalar(stat.pct_time_in_regime),
+            }
+        return {"current_regime": r.current_regime, "regime_stats": regime_stats_dict}
 
     garch_out, regime_out = await asyncio.gather(
         _async(_garch), _async(_regime)

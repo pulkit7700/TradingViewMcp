@@ -18,6 +18,8 @@ import json
 from typing import Any
 
 import yaml
+import pandas as pd
+import numpy as np
 
 # ─── Path setup ──────────────────────────────────────────────────────────────
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -451,7 +453,8 @@ async def get_market_state(ticker: str) -> dict:
 
         # Regime
         try:
-            detector = RegimeDetector(returns, n_regimes=3, seed=42)
+            returns_series = pd.Series(returns) if isinstance(returns, np.ndarray) else returns
+            detector = RegimeDetector(returns_series, n_regimes=3, seed=42)
             regime_result = detector.fit()
             regime = regime_result.current_regime
         except Exception:
