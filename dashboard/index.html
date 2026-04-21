@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NSE Quant Scan Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  :root {
+    --bg: #0d1117;
+    --card: #161b22;
+    --border: #30363d;
+    --red: #f85149;
+    --red-dim: #3d1a1a;
+    --green: #3fb950;
+    --green-dim: #1a3d1a;
+    --yellow: #d29922;
+    --yellow-dim: #3d2e0a;
+    --text: #e6edf3;
+    --sub: #8b949e;
+    --accent: #58a6ff;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; padding: 20px; min-height: 100vh; }
+
+  h1 { font-size: 22px; font-weight: 700; color: var(--accent); margin-bottom: 4px; }
+  .subtitle { color: var(--sub); font-size: 13px; margin-bottom: 24px; }
+
+  /* Scorecards */
+  .scorecards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+  .scorecard { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; }
+  .scorecard .label { font-size: 11px; color: var(--sub); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 8px; }
+  .scorecard .value { font-size: 32px; font-weight: 700; }
+  .scorecard .value.red { color: var(--red); }
+  .scorecard .value.green { color: var(--green); }
+  .scorecard .value.yellow { color: var(--yellow); }
+  .scorecard .value.blue { color: var(--accent); }
+  .scorecard .change { font-size: 12px; margin-top: 4px; color: var(--sub); }
+
+  /* Charts row */
+  .charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px; }
+  .chart-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 20px; }
+  .chart-card h3 { font-size: 13px; font-weight: 600; color: var(--sub); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 16px; }
+  .chart-card canvas { max-height: 260px; }
+
+  /* Full width chart */
+  .full-chart { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin-bottom: 24px; }
+  .full-chart h3 { font-size: 13px; font-weight: 600; color: var(--sub); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 16px; }
+  .full-chart canvas { max-height: 300px; }
+
+  /* Ticker grid */
+  .section-title { font-size: 14px; font-weight: 600; color: var(--sub); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 12px; margin-top: 8px; }
+  .ticker-section { margin-bottom: 24px; }
+  .ticker-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  .ticker-chip {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600;
+    border: 1px solid transparent; cursor: default;
+    transition: transform 0.1s;
+  }
+  .ticker-chip:hover { transform: translateY(-1px); }
+  .ticker-chip.bear { background: var(--red-dim); border-color: var(--red); color: var(--red); }
+  .ticker-chip.bull { background: var(--green-dim); border-color: var(--green); color: var(--green); }
+  .ticker-chip.neutral-short { background: #1e1e2e; border-color: #444; color: #c9a0ff; }
+  .ticker-chip.neutral-long { background: #1a2a1e; border-color: #2ea043; color: #7ee787; }
+  .ticker-chip .conf { font-size: 10px; opacity: 0.7; font-weight: 400; }
+
+  /* Sector table */
+  .table-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-bottom: 24px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th { background: #1c2128; color: var(--sub); font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; padding: 10px 16px; text-align: left; border-bottom: 1px solid var(--border); }
+  tbody tr { border-bottom: 1px solid #21262d; }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: #1c2128; }
+  tbody td { padding: 10px 16px; }
+  .pill { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+  .pill.bear { background: var(--red-dim); color: var(--red); }
+  .pill.bull { background: var(--green-dim); color: var(--green); }
+  .pill.neutral { background: #1e1e2e; color: #c9a0ff; }
+  .bar-cell { display: flex; align-items: center; gap: 8px; }
+  .bar { height: 6px; border-radius: 3px; }
+  .bar.red { background: var(--red); }
+  .bar.green { background: var(--green); }
+
+  /* macro box */
+  .macro-box { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin-bottom: 24px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+  .macro-item .label { font-size: 11px; color: var(--sub); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px; }
+  .macro-item .val { font-size: 15px; font-weight: 600; }
+  .macro-item .val.bearish { color: var(--red); }
+  .macro-item .val.bullish { color: var(--green); }
+  .macro-item .val.neutral { color: var(--yellow); }
+
+  footer { text-align: center; color: var(--sub); font-size: 11px; padding-top: 16px; border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+
+<h1>NSE Quant Scan — GARCH + HMM Regime Dashboard</h1>
+<p class="subtitle">Volatility pipeline · ~220 tickers · 20 Apr 2026 · Regime: Bear dominant</p>
+
+<!-- Scorecards -->
+<div class="scorecards">
+  <div class="scorecard">
+    <div class="label">High Conf SHORT</div>
+    <div class="value red">68</div>
+    <div class="change">score = -1.5 · Bear regime</div>
+  </div>
+  <div class="scorecard">
+    <div class="label">Moderate LONG</div>
+    <div class="value green">35</div>
+    <div class="change">score = +0.5 · Bull regime</div>
+  </div>
+  <div class="scorecard">
+    <div class="label">Neutral / Short</div>
+    <div class="value yellow">110</div>
+    <div class="change">score = -0.5 · Neutral regime</div>
+  </div>
+  <div class="scorecard">
+    <div class="label">High Conf LONG</div>
+    <div class="value blue">0</div>
+    <div class="change">score = +1.5 · None found</div>
+  </div>
+</div>
+
+<!-- Macro read -->
+<div class="macro-box">
+  <div class="macro-item"><div class="label">Market Bias</div><div class="val bearish">STRONGLY BEARISH</div></div>
+  <div class="macro-item"><div class="label">Dominant Regime</div><div class="val bearish">Bear (HMM state 0)</div></div>
+  <div class="macro-item"><div class="label">IV Signal</div><div class="val neutral">Broadly UNDERPRICED</div></div>
+  <div class="macro-item"><div class="label">Best Short Sectors</div><div class="val bearish">Chemicals · Auto Anc · Hospitality</div></div>
+  <div class="macro-item"><div class="label">Relative Long Sectors</div><div class="val bullish">IT · PSU Banks · Select Realty</div></div>
+  <div class="macro-item"><div class="label">Tickers Scanned</div><div class="val neutral">~220 NSE stocks</div></div>
+</div>
+
+<!-- Charts -->
+<div class="charts-row">
+  <div class="chart-card">
+    <h3>Signal Distribution</h3>
+    <canvas id="donutChart"></canvas>
+  </div>
+  <div class="chart-card">
+    <h3>Bear Signals by Sector</h3>
+    <canvas id="sectorBar"></canvas>
+  </div>
+</div>
+
+<div class="full-chart">
+  <h3>High Confidence SHORT — Confidence Score by Ticker (Top 30)</h3>
+  <canvas id="shortBar"></canvas>
+</div>
+
+<!-- Sector table -->
+<div class="section-title">Sector Breakdown</div>
+<div class="table-card">
+  <table>
+    <thead>
+      <tr>
+        <th>Sector</th>
+        <th>Bear (High Conf)</th>
+        <th>Neutral Short</th>
+        <th>Bull</th>
+        <th>Bias</th>
+        <th>Bear %</th>
+      </tr>
+    </thead>
+    <tbody id="sectorTable"></tbody>
+  </table>
+</div>
+
+<!-- Ticker chips - High Conf SHORT -->
+<div class="ticker-section">
+  <div class="section-title">🔴 High Confidence SHORT (Bear regime · score -1.5)</div>
+  <div class="ticker-grid" id="bearChips"></div>
+</div>
+
+<!-- Moderate LONG -->
+<div class="ticker-section">
+  <div class="section-title">🟢 Moderate LONG (Bull regime · score +0.5)</div>
+  <div class="ticker-grid" id="bullChips"></div>
+</div>
+
+<footer>TradingViewMcp · GARCH + HMM · Not financial advice · Generated 20 Apr 2026</footer>
+
+<script>
+// ── DATA ────────────────────────────────────────────────────────────────────
+const bearTickers = [
+  // Large cap
+  "HDFCBANK","LT","TITAN","M&M","DIVISLAB","EICHERMOT","CIPLA","HEROMOTOCO","NESTLEIND",
+  // IT
+  "LTIM","TATAELXSI","OFSS","MPHASIS",
+  // Pharma
+  "ABBOTINDIA","PFIZER","GLAXO","CAPLIPOINT","SUVEN","AUROPHARMA",
+  // Cap Goods
+  "ABB","THERMAX","GRINDWELL","BOSCHLTD","JSWINFRA","PNC","COCHINSHIP",
+  // Chemicals
+  "ATUL","NAVINFLUOR","CLEAN","TATACHEM","GSFC","COROMANDEL",
+  // Auto Anc
+  "EXIDEIND","CRAFTSMAN","ENDURANCE","MRF","PAGEIND",
+  // Electricals
+  "VGUARD","POLYCAB","KAJARIACER",
+  // Metals
+  "RATNAMANI","MOIL",
+  // FMCG
+  "MARICO","GODREJCP","PIDILITIND","RADICO","UNITDSPR","ICICIGI",
+  // Realty
+  "SOBHA","BRIGADE",
+  // Hospitality/QSR
+  "CHALET","EIHOTEL","DEVYANI","SAPPHIRE","WESTLIFE",
+  // Media
+  "ZEEL","SAREGAMA",
+  // Power
+  "TORNTPOWER","ADANIPOWER","CENTRALBK",
+  // Finance
+  "BAJAJHLDNG","EDELWEISS",
+  // Others
+  "NYKAA","REFEX","WAAREEENER","GPPL","ARVIND","RUPA","HEIDELBERG"
+];
+
+const bullTickers = [
+  "INFY","HINDUNILVR","KOTAKBANK","WIPRO","SUNPHARMA","HCLTECH","BAJAJFINSV",
+  "BRITANNIA","SBILIFE","INDUSINDBK","HINDALCO","AMBUJACEM","COLPAL","DLF",
+  "HAVELLS","PNB","TRENT","MOTHERSON","RVNL","UNIONBANK","DEEPAKNTR",
+  "CUMMINSIND","VSTIND","GLOBUSSPR","ZYDUSLIFE","DIXON","KEI","ALKEM",
+  "PFC","PHOENIXLTD","LODHA","POWERMECH","ANGELONE","NUVOCO","JKCEMENT"
+];
+
+const sectorData = [
+  { sector: "Large Cap / Nifty 50", bear: 9, neutral: 12, bull: 2 },
+  { sector: "Chemicals", bear: 6, neutral: 4, bull: 1 },
+  { sector: "Pharma", bear: 6, neutral: 6, bull: 2 },
+  { sector: "Capital Goods", bear: 7, neutral: 4, bull: 1 },
+  { sector: "Auto Ancillaries", bear: 5, neutral: 5, bull: 0 },
+  { sector: "IT / Software", bear: 4, neutral: 8, bull: 4 },
+  { sector: "Hospitality / QSR", bear: 5, neutral: 2, bull: 0 },
+  { sector: "FMCG / Consumer", bear: 6, neutral: 4, bull: 3 },
+  { sector: "Real Estate", bear: 2, neutral: 6, bull: 2 },
+  { sector: "Power / Utilities", bear: 2, neutral: 5, bull: 0 },
+  { sector: "Metals", bear: 2, neutral: 5, bull: 1 },
+  { sector: "Finance / NBFC", bear: 3, neutral: 6, bull: 3 },
+  { sector: "Media / Entertainment", bear: 2, neutral: 2, bull: 0 },
+  { sector: "Electricals / Cables", bear: 3, neutral: 3, bull: 2 },
+];
+
+// ── CHIPS ─────────────────────────────────────────────────────────────────
+function makeChips(tickers, cls, containerId) {
+  const el = document.getElementById(containerId);
+  tickers.forEach(t => {
+    const chip = document.createElement('div');
+    chip.className = `ticker-chip ${cls}`;
+    chip.innerHTML = `${t}<span class="conf">${cls === 'bear' ? '-1.5' : '+0.5'}</span>`;
+    el.appendChild(chip);
+  });
+}
+makeChips(bearTickers, 'bear', 'bearChips');
+makeChips(bullTickers, 'bull', 'bullChips');
+
+// ── SECTOR TABLE ──────────────────────────────────────────────────────────
+const tbody = document.getElementById('sectorTable');
+sectorData.forEach(r => {
+  const total = r.bear + r.neutral + r.bull;
+  const bearPct = Math.round((r.bear / total) * 100);
+  const bias = r.bear >= r.bull * 2 ? 'bear' : (r.bull > r.bear ? 'bull' : 'neutral');
+  const biasLabel = bias === 'bear' ? 'BEARISH' : bias === 'bull' ? 'BULLISH' : 'NEUTRAL';
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td style="font-weight:600">${r.sector}</td>
+    <td><span style="color:var(--red);font-weight:700">${r.bear}</span></td>
+    <td><span style="color:#c9a0ff">${r.neutral}</span></td>
+    <td><span style="color:var(--green)">${r.bull}</span></td>
+    <td><span class="pill ${bias}">${biasLabel}</span></td>
+    <td>
+      <div class="bar-cell">
+        <div class="bar red" style="width:${bearPct * 1.2}px"></div>
+        <span style="font-size:11px;color:var(--sub)">${bearPct}%</span>
+      </div>
+    </td>
+  `;
+  tbody.appendChild(tr);
+});
+
+// ── DONUT CHART ────────────────────────────────────────────────────────────
+new Chart(document.getElementById('donutChart'), {
+  type: 'doughnut',
+  data: {
+    labels: ['High Conf SHORT', 'Moderate LONG', 'Neutral SHORT', 'High Conf LONG'],
+    datasets: [{
+      data: [68, 35, 110, 0],
+      backgroundColor: ['#f85149', '#3fb950', '#7b5ea7', '#58a6ff'],
+      borderColor: '#161b22',
+      borderWidth: 3,
+    }]
+  },
+  options: {
+    plugins: {
+      legend: { position: 'bottom', labels: { color: '#8b949e', font: { size: 11 }, padding: 12 } }
+    },
+    cutout: '68%'
+  }
+});
+
+// ── SECTOR BAR ─────────────────────────────────────────────────────────────
+const topSectors = [...sectorData].sort((a,b) => b.bear - a.bear).slice(0, 10);
+new Chart(document.getElementById('sectorBar'), {
+  type: 'bar',
+  data: {
+    labels: topSectors.map(s => s.sector.split(' / ')[0]),
+    datasets: [{
+      label: 'Bear signals',
+      data: topSectors.map(s => s.bear),
+      backgroundColor: '#f8514966',
+      borderColor: '#f85149',
+      borderWidth: 1,
+      borderRadius: 4,
+    }]
+  },
+  options: {
+    indexAxis: 'y',
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { grid: { color: '#21262d' }, ticks: { color: '#8b949e' } },
+      y: { grid: { display: false }, ticks: { color: '#e6edf3', font: { size: 11 } } }
+    }
+  }
+});
+
+// ── SHORT CONFIDENCE BAR ───────────────────────────────────────────────────
+const top30 = bearTickers.slice(0, 30);
+new Chart(document.getElementById('shortBar'), {
+  type: 'bar',
+  data: {
+    labels: top30,
+    datasets: [{
+      label: 'Confidence Score',
+      data: top30.map(() => 1.5),
+      backgroundColor: top30.map((_, i) => `hsl(${0 + i * 1.5}, 80%, ${40 + (i % 5) * 3}%)`),
+      borderWidth: 0,
+      borderRadius: 4,
+    }]
+  },
+  options: {
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { grid: { display: false }, ticks: { color: '#8b949e', font: { size: 10 } } },
+      y: { grid: { color: '#21262d' }, ticks: { color: '#8b949e' }, min: 0, max: 2,
+           title: { display: true, text: 'Score', color: '#8b949e' } }
+    }
+  }
+});
+</script>
+</body>
+</html>
