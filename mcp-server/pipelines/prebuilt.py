@@ -319,6 +319,14 @@ async def _opt_step_flow(ctx: PipelineContext) -> PipelineContext:
     chain = ctx.get("options_chain")
     price = ctx.get("price")
 
+    # No options chain available (non-F&O stock) — return neutral defaults
+    if chain is None or (hasattr(chain, 'empty') and chain.empty):
+        neutral = {"pcr_volume": 1.0, "pcr_oi": 1.0, "smart_money_score": 0.0,
+                   "net_flow_score": 0.0, "n_unusual": 0, "max_pain": price, "net_gex": 0.0}
+        ctx.result("options_flow", neutral)
+        ctx.put("flow", neutral)
+        return ctx
+
     def _analyze():
         calls = chain[chain["option_type"] == "call"] if "option_type" in chain.columns else chain.iloc[:len(chain)//2]
         puts = chain[chain["option_type"] == "put"] if "option_type" in chain.columns else chain.iloc[len(chain)//2:]
@@ -468,10 +476,10 @@ async def _trans_step_tft(ctx: PipelineContext) -> PipelineContext:
         pf = pred.price_forecast
         vf = pred.vol_forecast
         return {
-            "price_q10": {h: _scalar(v) for h, v in pf.q10.items()},
-            "price_q50": {h: _scalar(v) for h, v in pf.q50.items()},
-            "price_q90": {h: _scalar(v) for h, v in pf.q90.items()},
-            "vol_q50": {h: _scalar(v) for h, v in vf.q50.items()},
+            "price_q10": {h: _scalar(v) for h, v in zip(pf.horizons, pf.q10)},
+            "price_q50": {h: _scalar(v) for h, v in zip(pf.horizons, pf.q50)},
+            "price_q90": {h: _scalar(v) for h, v in zip(pf.horizons, pf.q90)},
+            "vol_q50": {h: _scalar(v) for h, v in zip(vf.horizons, vf.q50)},
             "attention_proxy": {k: _scalar(v) for k, v in pred.attention_proxy.items()},
         }
 
@@ -607,7 +615,7 @@ async def _swarm_step_run_agents(ctx: PipelineContext) -> PipelineContext:
     }
 
     def _run():
-        state = SwarmState()
+        state = SwarmState(tickers=[ticker], n_assets=1)
         state.initialize([ticker])
 
         agents = [
@@ -779,6 +787,9 @@ async def _fusion_step_options_sentiment(ctx: PipelineContext) -> PipelineContex
     info = ctx.get("ticker_info", {})
 
     def _flow():
+        # Guard: non-F&O stocks have no options chain
+        if chain is None or (hasattr(chain, 'empty') and chain.empty):
+            return {"net_flow": 0.0, "pcr": 1.0, "smart_money": 0.0}
         calls = chain[chain["option_type"] == "call"] if "option_type" in chain.columns else chain.iloc[:len(chain)//2]
         puts = chain[chain["option_type"] == "put"] if "option_type" in chain.columns else chain.iloc[len(chain)//2:]
         analyzer = OptionsFlowAnalyzer(calls, puts, price, ctx.ticker)
@@ -854,7 +865,7 @@ async def _fusion_step_swarm(ctx: PipelineContext) -> PipelineContext:
         vix = get_vix_level()
         market_data = {"ticker": ticker, "price": price, "features": features, "vix": vix}
 
-        state = SwarmState()
+        state = SwarmState(tickers=[ticker], n_assets=1)
         state.initialize([ticker])
 
         agents = [
